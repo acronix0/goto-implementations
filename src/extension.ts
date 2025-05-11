@@ -44,25 +44,33 @@ class InterfaceCodeLensProvider implements vscode.CodeLensProvider {
           continue;
         }
 
-        if (this.interfaceMethodRegex.test(trimmedText)) {
-          const methodMatch = trimmedText.match(/^\s*(\w+)\s*\(/);
-          if (methodMatch) {
-            const methodName = methodMatch[1];
+        // Собираем весь метод, если он многострочный
+        let methodText = trimmedText;
+        while (
+          !this.interfaceMethodRegex.test(methodText) &&
+          i < document.lineCount - 1
+        ) {
+          i++;
+          methodText += " " + document.lineAt(i).text.trim();
+        }
 
-            const methodStart = lineText.indexOf(methodName);
-            const methodPosition = new vscode.Position(i, methodStart);
-            const methodRange = new vscode.Range(
-              methodPosition,
-              new vscode.Position(i, methodStart + methodName.length)
-            );
+        const methodMatch = methodText.match(/^\s*(\w+)\s*\(/);
+        if (methodMatch) {
+          const methodName = methodMatch[1];
 
-            const codeLens = new vscode.CodeLens(methodRange, {
-              title: "impls",
-              command: "goto-implementations.gotoImplementation",
-              arguments: [document.uri, methodRange, methodName],
-            });
-            codeLenses.push(codeLens);
-          }
+          const methodStart = lineText.indexOf(methodName);
+          const methodPosition = new vscode.Position(i, methodStart);
+          const methodRange = new vscode.Range(
+            methodPosition,
+            new vscode.Position(i, methodStart + methodName.length)
+          );
+
+          const codeLens = new vscode.CodeLens(methodRange, {
+            title: "impls",
+            command: "goto-implementations.gotoImplementation",
+            arguments: [document.uri, methodRange, methodName],
+          });
+          codeLenses.push(codeLens);
         }
       }
     }
