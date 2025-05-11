@@ -4,8 +4,6 @@ import * as dotenv from "dotenv";
 import * as path from "path";
 
 class InterfaceCodeLensProvider implements vscode.CodeLensProvider {
-  private interfaceMethodRegex =
-    /^\s*(\w+)\s*\([^)]*\)\s*(\([^)]*\)?|[^\n]*)?$/;
   private interfaceStartRegex = /^type\s+(\w+)\s+interface\s*{/;
 
   async provideCodeLenses(
@@ -13,65 +11,59 @@ class InterfaceCodeLensProvider implements vscode.CodeLensProvider {
     token: vscode.CancellationToken
   ): Promise<vscode.CodeLens[]> {
     const codeLenses: vscode.CodeLens[] = [];
+    const text = document.getText();
+    const lines = text.split("\n");
     let inInterface = false;
     let interfaceName = "";
-    let bracketCount = 0;
+    let bracketDepth = 0;
 
-    for (let i = 0; i < document.lineCount; i++) {
-      const line = document.lineAt(i);
-      const lineText = line.text;
-      const trimmedText = lineText.trim();
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
 
-      const interfaceMatch = trimmedText.match(this.interfaceStartRegex);
+      // Check for interface start
+      const interfaceMatch = trimmedLine.match(this.interfaceStartRegex);
       if (interfaceMatch) {
         inInterface = true;
-        bracketCount = 1;
+        bracketDepth = 1;
         interfaceName = interfaceMatch[1];
         continue;
       }
 
-      if (inInterface) {
-        bracketCount += (lineText.match(/{/g) || []).length;
-        bracketCount -= (lineText.match(/}/g) || []).length;
+      if (!inInterface) continue;
 
-        if (bracketCount === 0) {
-          inInterface = false;
-          interfaceName = "";
-          continue;
-        }
+      // Update bracket depth
+      bracketDepth += (line.match(/{/g) || []).length;
+      bracketDepth -= (line.match(/}/g) || []).length;
 
-        if (trimmedText.startsWith("//")) {
-          continue;
-        }
+      // Check for interface end
+      if (bracketDepth <= 0) {
+        inInterface = false;
+        continue;
+      }
 
-        // Собираем весь метод, если он многострочный
-        let methodText = trimmedText;
-        while (
-          !this.interfaceMethodRegex.test(methodText) &&
-          i < document.lineCount - 1
-        ) {
-          i++;
-          methodText += " " + document.lineAt(i).text.trim();
-        }
+      // Skip comments and empty lines
+      if (trimmedLine.startsWith("//") || trimmedLine === "") {
+        continue;
+      }
 
-        const methodMatch = methodText.match(/^\s*(\w+)\s*\(/);
-        if (methodMatch) {
-          const methodName = methodMatch[1];
+      // Find method signatures
+      const methodMatch = trimmedLine.match(/^(\w+)\s*\(/);
+      if (methodMatch) {
+        const methodName = methodMatch[1];
+        const methodPos = line.indexOf(methodName);
+        const range = new vscode.Range(
+          new vscode.Position(i, methodPos),
+          new vscode.Position(i, methodPos + methodName.length)
+        );
 
-          const methodStart = lineText.indexOf(methodName);
-          const methodPosition = new vscode.Position(i, methodStart);
-          const methodRange = new vscode.Range(
-            methodPosition,
-            new vscode.Position(i, methodStart + methodName.length)
-          );
-
-          const codeLens = new vscode.CodeLens(methodRange, {
+        codeLenses.push(
+          new vscode.CodeLens(range, {
             title: "impls",
             command: "goto-implementations.gotoImplementation",
-            arguments: [document.uri, methodRange, methodName],
-          });
-          codeLenses.push(codeLens);
-        }
+            arguments: [document.uri, range, methodName],
+          })
+        );
       }
     }
 
@@ -91,10 +83,15 @@ export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand(
     "goto-implementations.gotoImplementation",
     async (uri: vscode.Uri, range: vscode.Range, methodName: string) => {
+      console.log(
+        `Looking for implementations of ${methodName} at ${uri.path}`
+      );
       try {
         const implementations = await vscode.commands.executeCommand<
           vscode.Location[]
         >("vscode.executeImplementationProvider", uri, range.start);
+
+        console.log(`Found ${implementations?.length} implementations`);
 
         if (implementations && implementations.length > 0) {
           const items = await Promise.all(

@@ -2,7 +2,7 @@
   "name": "go-work-tools",
   "displayName": "Go work tools",
   "description": "A VSCode extension that provides code lens to easily navigate to implementations in Go code, and run with .env debugging",
-  "version": "0.3.2",
+  "version": "0.3.4",
   "publisher": "Acronix-dev",
   "icon": "icon.png",
   "license": "MIT",
